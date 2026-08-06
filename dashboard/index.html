@@ -61,10 +61,9 @@ function Card({ title, eyebrow, children, wide }) {
   );
 }
 
-const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : s);
 const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
 
-function wrapLabel(text, maxCharsPerLine = 16) {
+function wrapLabel(text, maxCharsPerLine = 16, maxLines = 3) {
   const words = String(text).split(" ");
   const lines = [];
   let current = "";
@@ -77,35 +76,48 @@ function wrapLabel(text, maxCharsPerLine = 16) {
     }
   });
   if (current) lines.push(current);
-  return lines.slice(0, 3); // cap at 3 lines to avoid runaway height
+  return lines.slice(0, maxLines);
 }
 
-function HBarChart({ data, labelKey, valueKey, colors, height = 280 }) {
+function HBarChart({ data, labelKey, valueKey, colors, height }) {
   if (!data || !data.length) return null;
   const max = Math.max(...data.map((d) => d[valueKey]));
-  const rowH = height / data.length;
-  const labelW = 150;
+  const labelW = 190;
+  const lineH = 12;
+  // pre-wrap all labels so we can size each row to fit its own line count
+  const wrapped = data.map((d) => wrapLabel(d[labelKey], 22, 2));
+  const rowHeights = wrapped.map((lines) => Math.max(34, lines.length * lineH + 14));
+  const totalH = rowHeights.reduce((a, b) => a + b, 0);
+  const finalHeight = height || totalH;
+  let cursorY = 0;
+  const rows = data.map((d, i) => {
+    const rowH = rowHeights[i];
+    const y = cursorY;
+    cursorY += rowH;
+    const barMaxW = 560 - labelW - 50;
+    const w = max ? (d[valueKey] / max) * barMaxW : 0;
+    const lines = wrapped[i];
+    const textCenterY = y + rowH / 2;
+    const firstLineY = textCenterY - ((lines.length - 1) * lineH) / 2 + 4;
+    return (
+      <g key={i}>
+        <text x={labelW - 8} y={firstLineY} textAnchor="end" fontSize="11" fill={INK}>
+          {lines.map((line, li) => (
+            <tspan key={li} x={labelW - 8} dy={li === 0 ? 0 : lineH}>{line}</tspan>
+          ))}
+        </text>
+        <rect x={labelW} y={y + rowH * 0.22} width={w} height={rowH * 0.56} fill={colors ? colors[i % colors.length] : SEAL} rx="2">
+          <title>{d[labelKey]}: {fmt(d[valueKey])}</title>
+        </rect>
+        <text x={labelW + w + 8} y={textCenterY + 4} fontSize="11" fill={MUTE}>
+          {fmt(d[valueKey])}
+        </text>
+      </g>
+    );
+  });
   return (
-    <svg width="100%" viewBox={`0 0 560 ${height}`} style={{ fontFamily: "'Courier New', monospace" }}>
-      {data.map((d, i) => {
-        const barMaxW = 560 - labelW - 50;
-        const w = max ? (d[valueKey] / max) * barMaxW : 0;
-        const y = i * rowH;
-        const fill = colors ? colors[i % colors.length] : SEAL;
-        return (
-          <g key={i}>
-            <text x={labelW - 8} y={y + rowH / 2 + 4} textAnchor="end" fontSize="11" fill={INK}>
-              {truncate(d[labelKey], 20)}
-            </text>
-            <rect x={labelW} y={y + rowH * 0.2} width={w} height={rowH * 0.6} fill={fill} rx="2">
-              <title>{d[labelKey]}: {fmt(d[valueKey])}</title>
-            </rect>
-            <text x={labelW + w + 8} y={y + rowH / 2 + 4} fontSize="11" fill={MUTE}>
-              {fmt(d[valueKey])}
-            </text>
-          </g>
-        );
-      })}
+    <svg width="100%" viewBox={`0 0 560 ${finalHeight}`} style={{ fontFamily: "'Courier New', monospace" }}>
+      {rows}
     </svg>
   );
 }
@@ -124,7 +136,7 @@ function VBarChart({ data, labelKey, valueKey, color = GOLD, height = 300 }) {
         const x = i * colW + colW * 0.15;
         const barW = colW * 0.7;
         const y = chartH - h;
-        const lines = wrapLabel(d[labelKey], 14);
+        const lines = wrapLabel(d[labelKey], 14, 3);
         return (
           <g key={i}>
             <rect x={x} y={y} width={barW} height={h} fill={color} rx="2">
