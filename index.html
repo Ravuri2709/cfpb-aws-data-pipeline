@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Consumer Complaint Register — CFPB Dashboard</title>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const API_URL = "https://kmiaus64cj.execute-api.us-east-1.amazonaws.com/default/Pavan__2506";
+
+const INK = "#1c2333";
+const PAPER = "#f6f3ea";
+const RULE = "#d8d2c0";
+const STAMP = "#a83232";
+const SEAL = "#2f5d50";
+const GOLD = "#b08a3e";
+const MUTE = "#6b6455";
+
+const COMPANY_COLORS = [SEAL, GOLD, STAMP, "#5b6a8f", "#7a8471", "#9c7a4a", "#4a5568", "#8a5a44"];
+
+function Card({ title, eyebrow, children, wide }) {
+  return (
+    <div style={{
+      background: PAPER,
+      border: `1px solid ${RULE}`,
+      borderRadius: 2,
+      padding: "20px 22px 22px",
+      gridColumn: wide ? "1 / -1" : undefined,
+    }}>
+      <div style={{
+        fontFamily: "'Courier New', monospace",
+        fontSize: 10.5,
+        letterSpacing: "0.14em",
+        color: STAMP,
+        textTransform: "uppercase",
+        marginBottom: 4,
+      }}>{eyebrow}</div>
+      <h3 style={{
+        fontFamily: "Georgia, 'Times New Roman', serif",
+        fontSize: 18,
+        fontWeight: 700,
+        color: INK,
+        margin: "0 0 16px",
+        borderBottom: `2px solid ${INK}`,
+        paddingBottom: 10,
+      }}>{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : s);
+const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
+
+function HBarChart({ data, labelKey, valueKey, colors, height = 280 }) {
+  if (!data || !data.length) return null;
+  const max = Math.max(...data.map((d) => d[valueKey]));
+  const rowH = height / data.length;
+  const labelW = 150;
+  return (
+    <svg width="100%" viewBox={`0 0 560 ${height}`} style={{ fontFamily: "'Courier New', monospace" }}>
+      {data.map((d, i) => {
+        const barMaxW = 560 - labelW - 50;
+        const w = max ? (d[valueKey] / max) * barMaxW : 0;
+        const y = i * rowH;
+        const fill = colors ? colors[i % colors.length] : SEAL;
+        return (
+          <g key={i}>
+            <text x={labelW - 8} y={y + rowH / 2 + 4} textAnchor="end" fontSize="11" fill={INK}>
+              {truncate(d[labelKey], 20)}
+            </text>
+            <rect x={labelW} y={y + rowH * 0.2} width={w} height={rowH * 0.6} fill={fill} rx="2">
+              <title>{d[labelKey]}: {fmt(d[valueKey])}</title>
+            </rect>
+            <text x={labelW + w + 8} y={y + rowH / 2 + 4} fontSize="11" fill={MUTE}>
+              {fmt(d[valueKey])}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function VBarChart({ data, labelKey, valueKey, color = GOLD, height = 220 }) {
+  if (!data || !data.length) return null;
+  const max = Math.max(...data.map((d) => d[valueKey]));
+  const width = 900;
+  const chartH = height - 90;
+  const colW = width / data.length;
+  return (
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ fontFamily: "'Courier New', monospace" }}>
+      <line x1="0" y1={chartH} x2={width} y2={chartH} stroke={RULE} />
+      {data.map((d, i) => {
+        const h = max ? (d[valueKey] / max) * (chartH - 10) : 0;
+        const x = i * colW + colW * 0.15;
+        const barW = colW * 0.7;
+        const y = chartH - h;
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={barW} height={h} fill={color} rx="2">
+              <title>{d[labelKey]}: {fmt(d[valueKey])}</title>
+            </rect>
+            <text x={x + barW / 2} y={chartH + 4} fontSize="10" fill={INK}
+              transform={`rotate(-35 ${x + barW / 2} ${chartH + 4})`} textAnchor="end">
+              {truncate(d[labelKey], 18)}
+            </text>
+            <text x={x + barW / 2} y={y - 6} fontSize="10" fill={MUTE} textAnchor="middle">
+              {fmt(d[valueKey])}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function Donut({ data, labelKey, valueKey, colorFor, size = 220 }) {
+  if (!data || !data.length) return null;
+  const total = data.reduce((a, d) => a + d[valueKey], 0);
+  const r = size / 2 - 10;
+  const cx = size / 2;
+  const cy = size / 2;
+  let angle = -90;
+  const arcs = data.map((d) => {
+    const frac = total ? d[valueKey] / total : 0;
+    const start = angle;
+    const sweep = frac * 360;
+    angle += sweep;
+    const end = angle;
+    const large = sweep > 180 ? 1 : 0;
+    const toXY = (a) => {
+      const rad = (a * Math.PI) / 180;
+      return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
+    };
+    const [x1, y1] = toXY(start);
+    const [x2, y2] = toXY(end);
+    return {
+      d: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`,
+      fill: colorFor(d),
+      label: d[labelKey],
+      value: d[valueKey],
+    };
+  });
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {arcs.map((a, i) => (
+        <path key={i} d={a.d} fill={a.fill}>
+          <title>{a.label}: {fmt(a.value)}</title>
+        </path>
+      ))}
+      <circle cx={cx} cy={cy} r={r * 0.55} fill={PAPER} />
+    </svg>
+  );
+}
+
+function LineChartSVG({ data, labelKey, valueKey, color = SEAL, height = 200 }) {
+  if (!data || !data.length) return null;
+  const width = 900;
+  const padL = 40, padB = 24, padT = 10;
+  const max = Math.max(...data.map((d) => d[valueKey]));
+  const min = 0;
+  const chartH = height - padB - padT;
+  const stepX = data.length > 1 ? (width - padL - 20) / (data.length - 1) : 0;
+  const points = data.map((d, i) => {
+    const x = padL + i * stepX;
+    const y = padT + chartH - (max ? ((d[valueKey] - min) / (max - min)) * chartH : 0);
+    return [x, y];
+  });
+  const path = points.map((p, i) => (i === 0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(" ");
+  return (
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ fontFamily: "'Courier New', monospace" }}>
+      <line x1={padL} y1={padT + chartH} x2={width} y2={padT + chartH} stroke={RULE} />
+      <line x1={padL} y1={padT} x2={padL} y2={padT + chartH} stroke={RULE} />
+      <path d={path} fill="none" stroke={color} strokeWidth="2.5" />
+      {points.map(([x, y], i) => (
+        <g key={i}>
+          <circle cx={x} cy={y} r="4" fill={color}>
+            <title>{data[i][labelKey]}: {fmt(data[i][valueKey])}</title>
+          </circle>
+          <text x={x} y={height - 6} fontSize="10" fill={MUTE} textAnchor="middle">{data[i][labelKey]}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function CompanySummary() {
+  const [company, setCompany] = useState("");
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const runSummary = () => {
+    if (!company.trim()) return;
+    setLoading(true);
+    setErr(null);
+    setSummary(null);
+    fetch(API_URL + "?company=" + encodeURIComponent(company.trim()))
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.error) throw new Error(json.error);
+        setSummary(json.summary);
+        setLoading(false);
+      })
+      .catch((e) => {
+        setErr(e.message || "Failed to generate summary");
+        setLoading(false);
+      });
+  };
+
+  return (
+    <Card eyebrow="Exhibit F — AI Deposition (Amazon Bedrock)" title="Ask about a company" wide>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <input
+          type="text"
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && runSummary()}
+          placeholder="e.g. EQUIFAX, INC."
+          style={{
+            flex: 1,
+            minWidth: 220,
+            padding: "10px 12px",
+            fontFamily: "'Courier New', monospace",
+            fontSize: 13,
+            border: `1px solid ${RULE}`,
+            borderRadius: 2,
+            background: "#fff",
+          }}
+        />
+        <button
+          onClick={runSummary}
+          disabled={loading}
+          style={{
+            padding: "10px 20px",
+            fontFamily: "'Courier New', monospace",
+            fontSize: 12,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            background: INK,
+            color: PAPER,
+            border: "none",
+            borderRadius: 2,
+            cursor: loading ? "default" : "pointer",
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          {loading ? "Drafting…" : "Summarize"}
+        </button>
+      </div>
+
+      {err && (
+        <div style={{ fontSize: 13, color: STAMP, fontFamily: "'Courier New', monospace" }}>
+          RECORD UNAVAILABLE — {err}
+        </div>
+      )}
+
+      {summary && (
+        <div style={{
+          fontFamily: "Georgia, 'Times New Roman', serif",
+          fontSize: 15,
+          lineHeight: 1.6,
+          color: INK,
+          borderLeft: `3px solid ${GOLD}`,
+          paddingLeft: 16,
+        }}>
+          {summary}
+        </div>
+      )}
+
+      {!summary && !err && !loading && (
+        <div style={{ fontSize: 12, color: "#8a8371", fontFamily: "'Courier New', monospace" }}>
+          Type a company name exactly as filed (e.g. "EQUIFAX, INC.") and generate a live summary from Amazon Bedrock.
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ComplaintsDashboard() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [now] = useState(() => new Date());
+
+  useEffect(() => {
+    fetch(API_URL)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.error) throw new Error(typeof json.error === "string" ? json.error : "Query error");
+        setData(json.data || json);
+        setLoading(false);
+      })
+      .catch((e) => {
+        setError(e.message || "Failed to load");
+        setLoading(false);
+      });
+  }, []);
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: INK,
+      backgroundImage:
+        "radial-gradient(circle at 20% 0%, #262f45 0%, transparent 45%), radial-gradient(circle at 90% 10%, #24352f 0%, transparent 40%)",
+      fontFamily: "Georgia, 'Times New Roman', serif",
+      padding: "36px 28px 60px",
+    }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto 32px" }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          borderBottom: `3px double ${GOLD}`,
+          paddingBottom: 16,
+          flexWrap: "wrap",
+          gap: 12,
+        }}>
+          <div>
+            <div style={{
+              fontFamily: "'Courier New', monospace",
+              fontSize: 11,
+              letterSpacing: "0.2em",
+              color: GOLD,
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}>
+              Docket No. CFPB-2026 · Public Record
+            </div>
+            <h1 style={{
+              color: PAPER,
+              fontSize: "clamp(26px, 4vw, 38px)",
+              fontWeight: 700,
+              margin: 0,
+              letterSpacing: "-0.01em",
+            }}>
+              Consumer Complaint Register
+            </h1>
+            <div style={{ color: "#9099b3", fontSize: 13.5, marginTop: 6, fontStyle: "italic" }}>
+              A live reading of the CFPB complaint database, compiled from Redshift Serverless
+            </div>
+          </div>
+          <div style={{
+            fontFamily: "'Courier New', monospace",
+            fontSize: 11,
+            color: "#7a8299",
+            textAlign: "right",
+          }}>
+            Compiled {now.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+            <br />
+            Source: files.consumerfinance.gov
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+        {loading && (
+          <div style={{ color: PAPER, fontFamily: "'Courier New', monospace", padding: 40, textAlign: "center" }}>
+            Retrieving records from the register…
+          </div>
+        )}
+
+        {error && (
+          <div style={{
+            background: "#3a1f22",
+            border: `1px solid ${STAMP}`,
+            color: "#f2c9c9",
+            padding: 20,
+            fontFamily: "'Courier New', monospace",
+            fontSize: 13,
+          }}>
+            <strong style={{ color: STAMP }}>RECORD UNAVAILABLE —</strong> {error}
+            <div style={{ marginTop: 8, opacity: 0.8 }}>
+              The endpoint may be cold-starting, or Redshift Serverless usage limits may be active. Try again shortly.
+            </div>
+          </div>
+        )}
+
+        {data && (
+          <React.Fragment>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 1,
+              background: RULE,
+              marginBottom: 28,
+              border: `1px solid ${RULE}`,
+            }}>
+              {[
+                ["Total complaints", data.summary_stats && data.summary_stats[0] && data.summary_stats[0].total_complaints],
+                ["Companies named", data.summary_stats && data.summary_stats[0] && data.summary_stats[0].unique_companies],
+                ["States represented", data.summary_stats && data.summary_stats[0] && data.summary_stats[0].states_represented],
+                ["Resolved on time", (() => {
+                  const rt = data.response_timeliness || [];
+                  const yes = (rt.find((r) => r.timely_response === "Yes") || {}).count || 0;
+                  const total = rt.reduce((a, r) => a + r.count, 0);
+                  return total ? Math.round((yes / total) * 100) + "%" : "—";
+                })()],
+              ].map(([label, value]) => (
+                <div key={label} style={{ background: PAPER, padding: "18px 20px" }}>
+                  <div style={{
+                    fontFamily: "'Courier New', monospace",
+                    fontSize: 10,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: MUTE,
+                  }}>{label}</div>
+                  <div style={{ fontSize: 30, fontWeight: 700, color: INK, marginTop: 4 }}>{fmt(value)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 20 }}>
+              <Card eyebrow="Exhibit A — By Respondent" title="Most-Named Companies">
+                <HBarChart data={data.top_companies} labelKey="company" valueKey="complaint_count" colors={COMPANY_COLORS} />
+              </Card>
+
+              <Card eyebrow="Exhibit B — By Nature" title="Disposition Timeliness">
+                <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}>
+                  <Donut
+                    data={data.response_timeliness}
+                    labelKey="timely_response"
+                    valueKey="count"
+                    colorFor={(d) => (d.timely_response === "Yes" ? SEAL : STAMP)}
+                  />
+                </div>
+                <div style={{ display: "flex", justifyContent: "center", gap: 20, fontSize: 12, fontFamily: "'Courier New', monospace" }}>
+                  {data.response_timeliness && data.response_timeliness.map((r, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 10, height: 10, background: r.timely_response === "Yes" ? SEAL : STAMP, display: "inline-block" }} />
+                      {r.timely_response === "Yes" ? "Timely" : "Untimely"} — {fmt(r.count)}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              <Card eyebrow="Exhibit C — By Allegation" title="Leading Issues Filed" wide>
+                <VBarChart data={data.top_issues} labelKey="issue" valueKey="issue_count" color={GOLD} />
+              </Card>
+
+              <Card eyebrow="Exhibit D — By Filing Date" title="Complaints Over Time" wide>
+                <LineChartSVG data={data.monthly_trend} labelKey="month" valueKey="complaints" color={SEAL} />
+                <div style={{ fontSize: 11, color: "#8a8371", fontFamily: "'Courier New', monospace", marginTop: 4 }}>
+                  Note: filing dates reflect the sampled extract, not full database coverage.
+                </div>
+              </Card>
+
+              <Card eyebrow="Exhibit E — By Tone (Amazon Comprehend)" title="Narrative Sentiment">
+                <HBarChart
+                  data={data.sentiment_breakdown}
+                  labelKey="sentiment"
+                  valueKey="count"
+                  colors={data.sentiment_breakdown && data.sentiment_breakdown.map(d => {
+                    if (d.sentiment === "NEGATIVE") return STAMP;
+                    if (d.sentiment === "POSITIVE") return SEAL;
+                    if (d.sentiment === "MIXED") return GOLD;
+                    return "#8b8f9c";
+                  })}
+                  height={180}
+                />
+                <div style={{ fontSize: 11, color: "#8a8371", fontFamily: "'Courier New', monospace", marginTop: 8 }}>
+                  NLP sentiment scoring on a 500-narrative sample, via Amazon Comprehend.
+                </div>
+              </Card>
+
+              <CompanySummary />
+            </div>
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<ComplaintsDashboard />);
+</script>
+</body>
+</html>
