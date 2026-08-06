@@ -72,3 +72,17 @@ Built to stay near $0: S3, Lambda, API Gateway, and Comprehend all fall within A
 ## Data source
 
 [CFPB Consumer Complaint Database](https://www.consumerfinance.gov/data-research/consumer-complaints/) — public, anonymized complaint records.
+
+
+
+## Future Work
+
+**Infrastructure as Code** — Migrate manually provisioned resources (S3, Glue, Redshift Serverless, Lambda, API Gateway) to Terraform or AWS CDK for repeatable, version-controlled deployments.
+
+**Fuzzy Matching** — Add fuzzy/entity matching to normalize company names in complaint data, improving aggregation accuracy across misspellings and naming variants.
+
+**API Authentication** — Secure the API Gateway endpoint with API keys or Cognito-based auth instead of open public access.
+
+**CI/CD** — Automate Glue job deployment, Lambda updates, and dashboard publishing via GitHub Actions on push to `main`.
+
+**Expanded Sentiment Analysis** — Move beyond Comprehends baseline sentiment scoring toward a fine-tuned transformer model for more nuanced complaint-tone classification (e.g., urgency, frustration level).
