@@ -64,6 +64,22 @@ function Card({ title, eyebrow, children, wide }) {
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : s);
 const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
 
+function wrapLabel(text, maxCharsPerLine = 16) {
+  const words = String(text).split(" ");
+  const lines = [];
+  let current = "";
+  words.forEach((word) => {
+    if ((current + " " + word).trim().length > maxCharsPerLine) {
+      if (current) lines.push(current.trim());
+      current = word;
+    } else {
+      current = (current + " " + word).trim();
+    }
+  });
+  if (current) lines.push(current);
+  return lines.slice(0, 3); // cap at 3 lines to avoid runaway height
+}
+
 function HBarChart({ data, labelKey, valueKey, colors, height = 280 }) {
   if (!data || !data.length) return null;
   const max = Math.max(...data.map((d) => d[valueKey]));
@@ -94,11 +110,11 @@ function HBarChart({ data, labelKey, valueKey, colors, height = 280 }) {
   );
 }
 
-function VBarChart({ data, labelKey, valueKey, color = GOLD, height = 220 }) {
+function VBarChart({ data, labelKey, valueKey, color = GOLD, height = 300 }) {
   if (!data || !data.length) return null;
   const max = Math.max(...data.map((d) => d[valueKey]));
   const width = 900;
-  const chartH = height - 90;
+  const chartH = height - 140;
   const colW = width / data.length;
   return (
     <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ fontFamily: "'Courier New', monospace" }}>
@@ -108,14 +124,16 @@ function VBarChart({ data, labelKey, valueKey, color = GOLD, height = 220 }) {
         const x = i * colW + colW * 0.15;
         const barW = colW * 0.7;
         const y = chartH - h;
+        const lines = wrapLabel(d[labelKey], 14);
         return (
           <g key={i}>
             <rect x={x} y={y} width={barW} height={h} fill={color} rx="2">
               <title>{d[labelKey]}: {fmt(d[valueKey])}</title>
             </rect>
-            <text x={x + barW / 2} y={chartH + 4} fontSize="10" fill={INK}
-              transform={`rotate(-35 ${x + barW / 2} ${chartH + 4})`} textAnchor="end">
-              {truncate(d[labelKey], 18)}
+            <text x={x + barW / 2} y={chartH + 16} fontSize="10" fill={INK} textAnchor="middle">
+              {lines.map((line, li) => (
+                <tspan key={li} x={x + barW / 2} dy={li === 0 ? 0 : 12}>{line}</tspan>
+              ))}
             </text>
             <text x={x + barW / 2} y={y - 6} fontSize="10" fill={MUTE} textAnchor="middle">
               {fmt(d[valueKey])}
