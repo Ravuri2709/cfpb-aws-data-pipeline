@@ -73,6 +73,25 @@ Built to stay near $0: S3, Lambda, API Gateway, and Comprehend all fall within A
 
 [CFPB Consumer Complaint Database](https://www.consumerfinance.gov/data-research/consumer-complaints/) — public, anonymized complaint records.
 
+## Document Intelligence (Textract)
+
+The pipeline also supports unstructured document inputs. Users can upload a scanned complaint letter, screenshot, or PDF, and the system automatically:
+
+1. Extracts text using **Amazon Textract**
+2. Runs sentiment analysis on the extracted text via **Amazon Comprehend**
+3. Generates a concise AI summary of the complaint using **Amazon Bedrock** (Nova Micro)
+4. Stores the combined result as structured JSON in S3
+
+This extends the pipeline beyond structured CSV/API data to handle real-world document inputs — the kind financial institutions actually receive alongside typed complaints (scanned letters, screenshots of statements, etc.).
+
+**Architecture:**
+
+```
+Document upload → S3 (incoming/) → Lambda trigger → Textract extraction
+→ Comprehend sentiment analysis → Bedrock AI summary → S3 (results/) as JSON
+```
+
+Code: [`textract-lambda/lambda_function.py`](./textract-lambda/lambda_function.py)
 
 
 ## Future Work
