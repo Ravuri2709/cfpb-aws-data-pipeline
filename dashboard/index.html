@@ -84,7 +84,6 @@ function HBarChart({ data, labelKey, valueKey, colors, height }) {
   const max = Math.max(...data.map((d) => d[valueKey]));
   const labelW = 190;
   const lineH = 12;
-  // pre-wrap all labels so we can size each row to fit its own line count
   const wrapped = data.map((d) => wrapLabel(d[labelKey], 22, 2));
   const rowHeights = wrapped.map((lines) => Math.max(34, lines.length * lineH + 14));
   const totalH = rowHeights.reduce((a, b) => a + b, 0);
@@ -320,6 +319,215 @@ function CompanySummary() {
   );
 }
 
+function DocumentUpload() {
+  const [file, setFile] = useState(null);
+  const [status, setStatus] = useState("idle");
+  const [result, setResult] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [fileName, setFileName] = useState("");
+
+  const resetState = () => {
+    setStatus("idle");
+    setResult(null);
+    setErrorMsg("");
+  };
+
+  const handleFileChange = (e) => {
+    const f = e.target.files[0];
+    if (f) {
+      setFile(f);
+      setFileName(f.name);
+      resetState();
+    }
+  };
+
+  const pollForResult = (filename, attemptsLeft) => {
+    if (attemptsLeft <= 0) {
+      setStatus("error");
+      setErrorMsg("Processing is taking longer than expected. Please try again shortly.");
+      return;
+    }
+    fetch(API_URL + "?check=" + encodeURIComponent(filename))
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.status === "ready") {
+          setResult(json.result);
+          setStatus("ready");
+        } else {
+          setTimeout(() => pollForResult(filename, attemptsLeft - 1), 3000);
+        }
+      })
+      .catch(() => {
+        setTimeout(() => pollForResult(filename, attemptsLeft - 1), 3000);
+      });
+  };
+
+  const handleUpload = () => {
+    if (!file) return;
+    setStatus("uploading");
+    setErrorMsg("");
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(",")[1];
+      fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, file_base64: base64 }),
+      })
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.error) throw new Error(json.error);
+          setStatus("processing");
+          pollForResult(file.name, 15);
+        })
+        .catch((e) => {
+          setStatus("error");
+          setErrorMsg(e.message || "Upload failed");
+        });
+    };
+    reader.onerror = () => {
+      setStatus("error");
+      setErrorMsg("Could not read the selected file");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const sentimentColor = (s) => {
+    if (s === "NEGATIVE") return STAMP;
+    if (s === "POSITIVE") return SEAL;
+    if (s === "MIXED") return GOLD;
+    return "#8b8f9c";
+  };
+
+  return (
+    <Card eyebrow="Exhibit G — Document Intelligence (Amazon Textract)" title="Analyze a complaint document" wide>
+      <div style={{ fontSize: 12, color: "#8a8371", fontFamily: "'Courier New', monospace", marginBottom: 14 }}>
+        Upload a scanned complaint letter, screenshot, or PDF. The system extracts the text,
+        scores its sentiment, and generates an AI summary.
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <label style={{
+          padding: "10px 16px",
+          fontFamily: "'Courier New', monospace",
+          fontSize: 12,
+          border: `1px solid ${RULE}`,
+          borderRadius: 2,
+          background: "#fff",
+          cursor: "pointer",
+        }}>
+          {fileName || "Choose file…"}
+          <input
+            type="file"
+            accept="image/*,.pdf"
+            onChange={handleFileChange}
+            style={{ display: "none" }}
+          />
+        </label>
+        <button
+          onClick={handleUpload}
+          disabled={!file || status === "uploading" || status === "processing"}
+          style={{
+            padding: "10px 20px",
+            fontFamily: "'Courier New', monospace",
+            fontSize: 12,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            background: INK,
+            color: PAPER,
+            border: "none",
+            borderRadius: 2,
+            cursor: (!file || status === "uploading" || status === "processing") ? "default" : "pointer",
+            opacity: (!file || status === "uploading" || status === "processing") ? 0.6 : 1,
+          }}
+        >
+          {status === "uploading" ? "Uploading…" : status === "processing" ? "Analyzing…" : "Upload & Analyze"}
+        </button>
+      </div>
+
+      {status === "error" && (
+        <div style={{ fontSize: 13, color: STAMP, fontFamily: "'Courier New', monospace" }}>
+          RECORD UNAVAILABLE — {errorMsg}
+        </div>
+      )}
+
+      {status === "processing" && (
+        <div style={{ fontSize: 12, color: "#8a8371", fontFamily: "'Courier New', monospace" }}>
+          Extracting text and running analysis — this can take up to 30 seconds…
+        </div>
+      )}
+
+      {status === "ready" && result && !result.error && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <span style={{
+              fontFamily: "'Courier New', monospace",
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#fff",
+              background: sentimentColor(result.sentiment),
+              padding: "4px 10px",
+              borderRadius: 2,
+            }}>
+              {result.sentiment}
+            </span>
+            <span style={{ fontSize: 11, color: MUTE, fontFamily: "'Courier New', monospace" }}>
+              {result.filename}
+            </span>
+          </div>
+
+          <div style={{
+            fontFamily: "Georgia, 'Times New Roman', serif",
+            fontSize: 15,
+            lineHeight: 1.6,
+            color: INK,
+            borderLeft: `3px solid ${GOLD}`,
+            paddingLeft: 16,
+            marginBottom: 16,
+          }}>
+            {result.summary}
+          </div>
+
+          <details>
+            <summary style={{
+              cursor: "pointer",
+              fontFamily: "'Courier New', monospace",
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: MUTE,
+            }}>
+              View extracted text
+            </summary>
+            <pre style={{
+              whiteSpace: "pre-wrap",
+              fontFamily: "'Courier New', monospace",
+              fontSize: 12,
+              color: INK,
+              background: "#fff",
+              border: `1px solid ${RULE}`,
+              padding: 12,
+              marginTop: 8,
+              maxHeight: 240,
+              overflow: "auto",
+            }}>
+              {result.extracted_text}
+            </pre>
+          </details>
+        </div>
+      )}
+
+      {status === "ready" && result && result.error && (
+        <div style={{ fontSize: 13, color: STAMP, fontFamily: "'Courier New', monospace" }}>
+          RECORD UNAVAILABLE — {result.error}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ComplaintsDashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -507,6 +715,7 @@ function ComplaintsDashboard() {
               </Card>
 
               <CompanySummary />
+              <DocumentUpload />
             </div>
           </React.Fragment>
         )}
