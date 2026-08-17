@@ -19,6 +19,32 @@
 const { useState, useEffect } = React;
 
 const API_URL = "https://kmiaus64cj.execute-api.us-east-1.amazonaws.com/default/Pavan__2506";
+// API Gateway usage-plan key. This throttles/limits and lets you monitor or
+// revoke access to the endpoint - it is NOT a secret (anyone viewing this
+// page's source can read it), so it stops casual abuse/cost overruns but is
+// not a substitute for real user auth (e.g. Cognito) on a production system.
+const API_KEY = "4bipB02aZxAL0LULF_r9VvRxuYXoMyznPqbVomkZdpY";
+const API_HEADERS = { "x-api-key": API_KEY };
+
+// The backend now returns short error *categories* instead of raw
+// exception text (so internal details never leak to the browser). Map
+// those categories to something a person can actually read.
+const ERROR_MESSAGES = {
+  summary_unavailable: "Couldn't generate a summary right now — the AI service or database may be temporarily unavailable.",
+  query_failed: "That query didn't complete in time.",
+  all_queries_failed: "The database didn't respond in time. It may be cold-starting after being idle — try again in a moment.",
+  unknown_dataset: "That dataset isn't available.",
+  processing_failed: "Something went wrong while analyzing this document. Please try again.",
+  unauthorized: "This request wasn't authorized. Double-check the API key is set correctly.",
+  missing_fields: "Please choose a file before uploading.",
+  invalid_file_data: "That file couldn't be read. Please try a different file.",
+  file_too_large: "That file is too large (8MB max). Please try a smaller file.",
+  upload_failed: "Upload failed. Please try again.",
+  check_failed: "Couldn't check the processing status. Please try again.",
+};
+function friendlyError(message) {
+  return ERROR_MESSAGES[message] || message || "Something went wrong.";
+}
 
 const INK = "#1c2333";
 const PAPER = "#f6f3ea";
@@ -237,7 +263,7 @@ function CompanySummary() {
     setLoading(true);
     setErr(null);
     setSummary(null);
-    fetch(API_URL + "?company=" + encodeURIComponent(company.trim()))
+    fetch(API_URL + "?company=" + encodeURIComponent(company.trim()), { headers: API_HEADERS })
       .then((r) => r.json())
       .then((json) => {
         if (json.error) throw new Error(json.error);
@@ -293,7 +319,7 @@ function CompanySummary() {
 
       {err && (
         <div style={{ fontSize: 13, color: STAMP, fontFamily: "'Courier New', monospace" }}>
-          RECORD UNAVAILABLE — {err}
+          RECORD UNAVAILABLE — {friendlyError(err)}
         </div>
       )}
 
@@ -347,7 +373,7 @@ function DocumentUpload() {
       setErrorMsg("Processing is taking longer than expected. Please try again shortly.");
       return;
     }
-    fetch(API_URL + "?check=" + encodeURIComponent(filename))
+    fetch(API_URL + "?check=" + encodeURIComponent(filename), { headers: API_HEADERS })
       .then((r) => r.json())
       .then((json) => {
         if (json.status === "ready") {
@@ -372,7 +398,7 @@ function DocumentUpload() {
       const base64 = reader.result.split(",")[1];
       fetch(API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...API_HEADERS },
         body: JSON.stringify({ filename: file.name, file_base64: base64 }),
       })
         .then((r) => r.json())
@@ -448,7 +474,7 @@ function DocumentUpload() {
 
       {status === "error" && (
         <div style={{ fontSize: 13, color: STAMP, fontFamily: "'Courier New', monospace" }}>
-          RECORD UNAVAILABLE — {errorMsg}
+          RECORD UNAVAILABLE — {friendlyError(errorMsg)}
         </div>
       )}
 
@@ -521,7 +547,7 @@ function DocumentUpload() {
 
       {status === "ready" && result && result.error && (
         <div style={{ fontSize: 13, color: STAMP, fontFamily: "'Courier New', monospace" }}>
-          RECORD UNAVAILABLE — {result.error}
+          RECORD UNAVAILABLE — {friendlyError(result.error)}
         </div>
       )}
     </Card>
@@ -533,9 +559,16 @@ function ComplaintsDashboard() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [now] = useState(() => new Date());
+  // Pagination state for "load more" on the two ranked charts. Each entry
+  // tracks how many rows we've fetched so far and whether we've hit the
+  // end (server returned fewer rows than we asked for).
+  const [pages, setPages] = useState({
+    top_companies: { offset: 8, loadingMore: false, done: false },
+    top_issues: { offset: 8, loadingMore: false, done: false },
+  });
 
   useEffect(() => {
-    fetch(API_URL)
+    fetch(API_URL, { headers: API_HEADERS })
       .then((r) => r.json())
       .then((json) => {
         if (json.error) throw new Error(typeof json.error === "string" ? json.error : "Query error");
@@ -547,6 +580,31 @@ function ComplaintsDashboard() {
         setLoading(false);
       });
   }, []);
+
+  const loadMore = (name) => {
+    const page = pages[name];
+    if (!page || page.loadingMore || page.done) return;
+    setPages((p) => ({ ...p, [name]: { ...page, loadingMore: true } }));
+
+    fetch(API_URL + "?more=" + encodeURIComponent(name) + "&offset=" + page.offset, { headers: API_HEADERS })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.error) throw new Error(typeof json.error === "string" ? json.error : "Query error");
+        const rows = json.rows || [];
+        setData((d) => ({ ...d, [name]: [...(d[name] || []), ...rows] }));
+        setPages((p) => ({
+          ...p,
+          [name]: {
+            offset: page.offset + rows.length,
+            loadingMore: false,
+            done: rows.length < (json.limit || 8),
+          },
+        }));
+      })
+      .catch(() => {
+        setPages((p) => ({ ...p, [name]: { ...page, loadingMore: false } }));
+      });
+  };
 
   return (
     <div style={{
@@ -620,10 +678,7 @@ function ComplaintsDashboard() {
             fontFamily: "'Courier New', monospace",
             fontSize: 13,
           }}>
-            <strong style={{ color: STAMP }}>RECORD UNAVAILABLE —</strong> {error}
-            <div style={{ marginTop: 8, opacity: 0.8 }}>
-              The endpoint may be cold-starting, or Redshift Serverless usage limits may be active. Try again shortly.
-            </div>
+            <strong style={{ color: STAMP }}>RECORD UNAVAILABLE —</strong> {friendlyError(error)}
           </div>
         )}
 
@@ -664,6 +719,27 @@ function ComplaintsDashboard() {
             <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 20 }}>
               <Card eyebrow="Exhibit A — By Respondent" title="Most-Named Companies">
                 <HBarChart data={data.top_companies} labelKey="company" valueKey="complaint_count" colors={COMPANY_COLORS} />
+                {!pages.top_companies.done && (
+                  <button
+                    onClick={() => loadMore("top_companies")}
+                    disabled={pages.top_companies.loadingMore}
+                    style={{
+                      marginTop: 10,
+                      fontFamily: "'Courier New', monospace",
+                      fontSize: 11,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      background: "transparent",
+                      color: MUTE,
+                      border: `1px solid ${RULE}`,
+                      borderRadius: 2,
+                      padding: "6px 12px",
+                      cursor: pages.top_companies.loadingMore ? "default" : "pointer",
+                    }}
+                  >
+                    {pages.top_companies.loadingMore ? "Loading…" : "Load more"}
+                  </button>
+                )}
               </Card>
 
               <Card eyebrow="Exhibit B — By Nature" title="Disposition Timeliness">
@@ -687,6 +763,27 @@ function ComplaintsDashboard() {
 
               <Card eyebrow="Exhibit C — By Allegation" title="Leading Issues Filed" wide>
                 <VBarChart data={data.top_issues} labelKey="issue" valueKey="issue_count" color={GOLD} />
+                {!pages.top_issues.done && (
+                  <button
+                    onClick={() => loadMore("top_issues")}
+                    disabled={pages.top_issues.loadingMore}
+                    style={{
+                      marginTop: 10,
+                      fontFamily: "'Courier New', monospace",
+                      fontSize: 11,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      background: "transparent",
+                      color: MUTE,
+                      border: `1px solid ${RULE}`,
+                      borderRadius: 2,
+                      padding: "6px 12px",
+                      cursor: pages.top_issues.loadingMore ? "default" : "pointer",
+                    }}
+                  >
+                    {pages.top_issues.loadingMore ? "Loading…" : "Load more"}
+                  </button>
+                )}
               </Card>
 
               <Card eyebrow="Exhibit D — By Filing Date" title="Complaints Over Time" wide>
