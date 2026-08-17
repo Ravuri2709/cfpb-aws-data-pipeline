@@ -1,6 +1,12 @@
 import json
-import boto3
+import logging
 import os
+import uuid
+
+import boto3
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 s3 = boto3.client('s3')
 textract = boto3.client('textract')
@@ -8,8 +14,12 @@ comprehend = boto3.client('comprehend')
 bedrock = boto3.client('bedrock-runtime')
 
 RESULTS_PREFIX = "results/"
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-micro-v1:0")
 
 def lambda_handler(event, context):
+    request_id = uuid.uuid4().hex[:12]
+    bucket = None
+    filename = None
     try:
         # Get the uploaded file's bucket and key from the S3 event
         record = event['Records'][0]
@@ -56,7 +66,7 @@ def lambda_handler(event, context):
             f"{extracted_text[:3000]}"
         )
         bedrock_response = bedrock.invoke_model(
-            modelId="amazon.nova-micro-v1:0",
+            modelId=BEDROCK_MODEL_ID,
             body=json.dumps({
                 "messages": [
                     {"role": "user", "content": [{"text": prompt_text}]}
@@ -80,12 +90,21 @@ def lambda_handler(event, context):
 
         return {"statusCode": 200, "body": json.dumps(result)}
 
-    except Exception as e:
-        error_result = {"error": str(e)}
-        try:
-            write_result(bucket, filename, error_result)
-        except Exception:
-            pass
+    except Exception:
+        # Log the full exception (with traceback) to CloudWatch only -
+        # never return raw exception text to whatever reads results/*.json,
+        # since it can contain internal details (bucket/key names, IAM
+        # errors, etc.).
+        logger.exception(
+            "Document processing failed [request_id=%s bucket=%r filename=%r]",
+            request_id, bucket, filename,
+        )
+        error_result = {"error": "processing_failed", "request_id": request_id}
+        if bucket and filename:
+            try:
+                write_result(bucket, filename, error_result)
+            except Exception:
+                logger.exception("Also failed to write error result [request_id=%s]", request_id)
         return {"statusCode": 500, "body": json.dumps(error_result)}
 
 
